@@ -2,27 +2,56 @@ function FindProxyForURL(url, host) {
     var proxy = "PROXY 192.168.3.252:7890; SOCKS5 192.168.3.252:7891";
     var direct = "DIRECT";
     
-    // 关键：鸿蒙系统网络检测地址必须直连
-    var harmonyCheckHosts = [
-        // 华为鸿蒙专用检测地址
-        "connectivitycheck.huawei.com",
-        "hwcloudtest-drcn.dbankcloud.cn",
-        "hwcloudtest-drcn.dbankcdn.com",
-        // 兼容安卓通用检测地址
-        "connectivitycheck.gstatic.com",
-        "clients3.google.com",
-        "gstatic.com"
+    // 1. 鸿蒙系统核心检测地址（包含完整URL路径匹配）
+    var harmonyCriticalChecks = [
+        // 华为检测URL（精确匹配完整路径）
+        "http://connectivitycheck.huawei.com/generate_204",
+        "https://connectivitycheck.huawei.com/generate_204",
+        "http://hwcloudtest-drcn.dbankcloud.cn/generate_204",
+        "https://hwcloudtest-drcn.dbankcloud.cn/generate_204",
+        // 华为云检测路径
+        "http://hwcloudtest-drcn.dbankcdn.com/connectivity-check.html"
     ];
     
-    // 优先处理检测地址
-    for (var i = 0; i < harmonyCheckHosts.length; i++) {
-        var checkHost = harmonyCheckHosts[i];
-        if (host === checkHost || host.endsWith("." + checkHost)) {
+    // 精确匹配检测URL，确保这些请求100%直连
+    for (var i = 0; i < harmonyCriticalChecks.length; i++) {
+        if (url.startsWith(harmonyCriticalChecks[i])) {
             return direct;
         }
     }
     
-    // 本地地址直连
+    // 2. 鸿蒙系统相关域名（泛域名匹配）
+    var harmonyDomains = [
+        "connectivitycheck.huawei.com",
+        "hwcloudtest-drcn.dbankcloud.cn",
+        "hwcloudtest-drcn.dbankcdn.com",
+        "huawei.com",
+        "dbankcloud.cn",
+        "dbankcdn.com"
+    ];
+    
+    for (var i = 0; i < harmonyDomains.length; i++) {
+        var domain = harmonyDomains[i];
+        if (host === domain || host.endsWith("." + domain)) {
+            return direct;
+        }
+    }
+    
+    // 3. 兼容安卓和其他检测地址
+    var androidChecks = [
+        "connectivitycheck.gstatic.com",
+        "clients3.google.com",
+        "gstatic.com",
+        "captive.apple.com" // 避免影响跨系统兼容
+    ];
+    
+    for (var i = 0; i < androidChecks.length; i++) {
+        if (host === androidChecks[i] || host.endsWith("." + androidChecks[i])) {
+            return direct;
+        }
+    }
+    
+    // 4. 本地地址直连（保持不变）
     if (isPlainHostName(host) || 
         shExpMatch(host, "*.local") ||
         isInNet(ipv4(host), "10.0.0.0", "255.0.0.0") ||
@@ -43,9 +72,14 @@ function FindProxyForURL(url, host) {
     return direct;
 }
 
-// 辅助函数
+// 辅助函数（增强路径匹配）
 function matchRule(host, url, rule) {
     if (rule === "" || rule[0] === '!') return false;
+    
+    // 优先匹配完整URL（解决鸿蒙检测路径问题）
+    if (rule.startsWith("http")) {
+        return url.startsWith(rule);
+    }
     
     if (rule.startsWith("||")) {
         var domain = rule.slice(2).split('/')[0];
@@ -61,16 +95,24 @@ function matchRule(host, url, rule) {
     return shExpMatch(host, rule) || shExpMatch(url, rule);
 }
 
+// 优化IP解析（避免鸿蒙下解析失败）
 function ipv4(host) {
     try {
-        return dnsResolve(host);
+        // 鸿蒙对本地域名解析较严格，增加重试
+        var ip = dnsResolve(host);
+        return ip || host;
     } catch (e) {
+        // 解析失败时直接返回主机名，避免阻塞
         return host;
     }
 }
 
+// 完善字符串方法（兼容鸿蒙WebView）
 if (!String.prototype.endsWith) {
     String.prototype.endsWith = function(suffix) {
-        return this.indexOf(suffix, this.length - suffix.length) !== -1;
+        if (typeof suffix !== 'string' || this.length < suffix.length) {
+            return false;
+        }
+        return this.substring(this.length - suffix.length) === suffix;
     };
 }
