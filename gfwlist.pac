@@ -51,5 +51,5 @@ function matchRule(host, url, rule) {
 if (!String.prototype.endsWith) {
     String.prototype.endsWith = function(suffix) {
         return this.indexOf(suffix, this.length - suffix.length) !== -1;
-    }
+    }; // 修复了此处缺少的分号
 }
